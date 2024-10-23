@@ -79,7 +79,7 @@ def into(input, output, name, identifier, con, skip_table_prefix=False):
         engine = create_engine(output)
         con = engine.connect()
 
-        df = pd.read_csv(input)
+        df = pd.read_csv(input, sep="\t")
         # add "name" prefix to column headers
         if not skip_table_prefix:
             no_prefix = ["ImageNumber", "ObjectNumber"]  # exception columns
@@ -94,7 +94,7 @@ def into(input, output, name, identifier, con, skip_table_prefix=False):
         number_of_rows, _ = df.shape
         table_number_column = [identifier] * number_of_rows  # create additional column
         df.insert(0, "TableNumber", table_number_column, allow_duplicates=False)
-        df.to_sql(name=name, con=con, if_exists="append", index=False)
+        df.to_sql(name=name, con=con.connection, if_exists="append", index=False)
 
 
 def checksum(pathname, buffer_size=65536):
@@ -139,7 +139,7 @@ def seed(source, target, config_path, skip_image_prefix=True):
     for directory in directories:
         # get the image CSV and the CSVs for each of the compartments
         try:
-            compartments, image = cytominer_database.utils.validate_csv_set(
+            compartments, image = cytominer_database.utils.validate_txt_set(
                 config_file, directory
             )
         except IOError as e:
