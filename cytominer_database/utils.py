@@ -263,3 +263,117 @@ def get_name(file_path):
     """
     name, _ = os.path.splitext(os.path.basename(file_path))
     return name.capitalize()
+
+def validate_txt_set(config, directory):
+    """
+    Validate a set of CSV files.
+
+    This function validates a set of CSV files in a directory. These CSV files correspond to measurements
+    made on different cellular compartments, e.g. Cells.csv, Cytoplasm.csv, Nuclei.csv. An Image.csv file,
+    corresponding to measurements made on the whole image, along with metadata, is also typically present.
+
+    :param config: configuration file - this contains the set of CSV files to validate.
+    :param directory: directory containing the CSV files.
+
+    :return: a tuple where the first element is the list of compartment CSV files, the second is the image CSV file.
+
+    """
+
+    # get the image CSV
+    image_csv = os.path.join(directory, config["filenames"]["image"])
+
+    if not os.path.isfile(image_csv):
+        raise IOError(
+            "{} not found in {}. Skipping.".format(
+                config["filenames"]["image"], directory
+            )
+        )
+
+    # get the CSV file for each compartment
+    compartment_csvs = collect_txts(config, directory)
+
+    filenames = compartment_csvs + [image_csv]
+
+    # validate all the CSVs
+    file_checks = dict({(filename, validate_txt(filename)) for filename in filenames})
+
+    # if any CSV is invalid, throw an error
+    if not all(file_checks.values()):
+        invalid_files = ",".join(
+            [
+                os.path.basename(filename)
+                for (filename, valid) in file_checks.items()
+                if not valid
+            ]
+        )
+        raise IOError(
+            "Some files were invalid: {}. Skipping {}.".format(invalid_files, directory)
+        )
+
+    return compartment_csvs, image_csv
+
+
+def collect_txts(config, directory):
+    """
+    Collect CSV files from a directory.
+
+    This function collects CSV files in a directory, excluding those that have been specified in the configuration file.
+    This enables collecting only those CSV files that correspond to cellular compartments. e.g. Cells.csv, Cytoplasm.csv,
+    Nuclei.csv. CSV files corresponding to experiment, image, or object will be excluded.
+
+    :param config: configuration file.
+    :param directory: directory containing the CSV files.
+
+    :return: a list of CSV files.
+
+    """
+    config_filenames = []
+
+    for filename_option in ["experiment", "image", "object"]:
+        if config.has_option("filenames", filename_option):
+            config_filenames.append(
+                os.path.join(directory, config["filenames"][filename_option])
+            )
+
+    filenames = glob.glob(os.path.join(directory, "*.txt"))
+
+    return [filename for filename in filenames if filename not in config_filenames]
+
+def validate_txt(txtfile):
+    """
+    Validate a tab-separated .txt file.
+
+    The .txt file typically corresponds to either a measurement made on a compartment, e.g., Cells.txt, or on an image,
+    e.g., Image.txt. The validation performed is generic - it simply checks for malformed rows and non-empty content.
+
+    :param txtfile: tab-separated text file to validate
+
+    :return: True if valid, False otherwise.
+    """
+    # Check if the file is empty
+    if os.stat(txtfile).st_size == 0:
+        return False
+
+    # Check if the file has at least one row of data (excluding the header)
+    with open(txtfile, "r") as txtfd:
+        reader = csv.reader(txtfd, delimiter="\t")  # Specify tab delimiter
+        nrows = sum(1 for _ in reader) - 1  # exclude header
+
+    if nrows < 1:
+        return False
+
+    # Basic validation: check for malformed rows
+    with open(txtfile, "r") as txtfd:
+        reader = csv.reader(txtfd, delimiter="\t")
+        header = next(reader, None)  # Read header row
+
+        # If there is no header, the file is invalid
+        if not header:
+            return False
+
+        for row in reader:
+            # Check if each row has the same number of columns as the header
+            if len(row) != len(header):
+                return False
+
+    return True
